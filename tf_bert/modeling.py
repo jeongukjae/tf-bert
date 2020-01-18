@@ -11,6 +11,19 @@ def gelu(x):
     return 0.5 * x * (1.0 + tf.tanh(0.7978845608028654 * x * (1 + 0.044715 * x * x)))
 
 
+def get_activation_function(hidden_act):
+    if hidden_act == "linear":
+        return None
+    elif hidden_act == "relu":
+        return tf.nn.relu
+    elif hidden_act == "gelu":
+        return gelu
+    elif hidden_act == "tanh":
+        return tf.tanh
+    else:
+        raise ValueError("Unsupported activation: %s" % hidden_act)
+
+
 class BertConfig:
     def __init__(
         self,
@@ -29,7 +42,7 @@ class BertConfig:
         **kwargs,  # unused
     ):
         self.attention_probs_dropout_prob = attention_probs_dropout_prob
-        self.hidden_act = hidden_act
+        self.hidden_act = get_activation_function(hidden_act)
         self.hidden_dropout_prob = hidden_dropout_prob
         self.hidden_size = hidden_size
         self.initializer_range = initializer_range
@@ -83,11 +96,11 @@ class TransformerEncoder(tf.keras.layers.Layer):
     def __init__(self, config: BertConfig):
         super().__init__()
         self.attention_proj = tf.keras.layers.Dense(config.hidden_size * 3)
-
         self.attention_dense = tf.keras.layers.Dense(config.hidden_size)
         self.attention_layer_norm = tf.keras.layers.LayerNormalization(epsilon=config.layer_norm_eps, axis=-1)
 
         self.intermediate_dense = tf.keras.layers.Dense(config.intermediate_size)
+        self.intermediate_act = config.hidden_act
         self.intermediate_dense2 = tf.keras.layers.Dense(config.hidden_size)
         self.intermediate_layer_norm = tf.keras.layers.LayerNormalization(epsilon=config.layer_norm_eps, axis=-1)
 
@@ -103,7 +116,9 @@ class TransformerEncoder(tf.keras.layers.Layer):
         # add and norm
         attention = self.attention_layer_norm(attention + sequence)
         # fc
-        intermediate = gelu(self.intermediate_dense(attention))
+        intermediate = self.intermediate_dense(attention)
+        if self.intermediate_act is not None:
+            intermediate = self.intermediate_act(intermediate)
         intermediate = self.dropout(self.intermediate_dense2(intermediate))
         # add and norm
         intermediate = self.intermediate_layer_norm(intermediate + attention)
