@@ -24,6 +24,10 @@ def get_activation_function(hidden_act):
         raise ValueError("Unsupported activation: %s" % hidden_act)
 
 
+def get_initializer(x):
+    return tf.keras.initializers.TruncatedNormal(stddev=x)
+
+
 class BertConfig:
     def __init__(
         self,
@@ -67,14 +71,38 @@ class Bert(tf.keras.layers.Layer):
         super().__init__()
 
         # embedding layer
-        self.token_embeddings = tf.keras.layers.Embedding(config.vocab_size, config.hidden_size)
-        self.token_type_embeddings = tf.keras.layers.Embedding(config.type_vocab_size, config.hidden_size)
-        self.position_embeddings = tf.keras.layers.Embedding(config.max_position_embeddings, config.hidden_size)
-        self.embedding_layer_norm = tf.keras.layers.LayerNormalization(epsilon=config.layer_norm_eps, axis=-1)
+        self.token_embeddings = tf.keras.layers.Embedding(
+            config.vocab_size,
+            config.hidden_size,
+            embeddings_initializer=get_initializer(config.initializer_range),
+        )
+        self.token_type_embeddings = tf.keras.layers.Embedding(
+            config.type_vocab_size,
+            config.hidden_size,
+            embeddings_initializer=get_initializer(config.initializer_range),
+        )
+        self.position_embeddings = tf.keras.layers.Embedding(
+            config.max_position_embeddings,
+            config.hidden_size,
+            embeddings_initializer=get_initializer(config.initializer_range),
+        )
+        self.embedding_layer_norm = tf.keras.layers.LayerNormalization(
+            epsilon=config.layer_norm_eps, axis=-1
+        )
 
         self.dropout = tf.keras.layers.Dropout(config.hidden_dropout_prob)
 
-        self.encoders = [TransformerEncoder(config) for _ in range(config.num_hidden_layers)]
+        # encoder
+        self.encoders = [
+            TransformerEncoder(config) for _ in range(config.num_hidden_layers)
+        ]
+
+        # pooler
+        self.pooler_layer = tf.keras.layers.Dense(
+            config.hidden_size,
+            kernel_initializer=get_initializer(config.initializer_range),
+            activation="tanh",
+        )
 
     def call(self, input_ids, token_type_ids, position_ids, attention_mask):
         words_embeddings = self.token_embeddings(input_ids)
@@ -89,20 +117,38 @@ class Bert(tf.keras.layers.Layer):
         for encoder in self.encoders:
             hidden_states = encoder(hidden_states, attention_mask)
 
-        return hidden_states
+        pooled_output = self.pooler_layer(hidden_states[:, 0, :])
+
+        return hidden_states, pooled_output
 
 
 class TransformerEncoder(tf.keras.layers.Layer):
     def __init__(self, config: BertConfig):
         super().__init__()
-        self.attention_proj = tf.keras.layers.Dense(config.hidden_size * 3)
-        self.attention_dense = tf.keras.layers.Dense(config.hidden_size)
-        self.attention_layer_norm = tf.keras.layers.LayerNormalization(epsilon=config.layer_norm_eps, axis=-1)
+        self.attention_proj = tf.keras.layers.Dense(
+            config.hidden_size * 3,
+            kernel_initializer=get_initializer(config.initializer_range),
+        )
+        self.attention_dense = tf.keras.layers.Dense(
+            config.hidden_size,
+            kernel_initializer=get_initializer(config.initializer_range),
+        )
+        self.attention_layer_norm = tf.keras.layers.LayerNormalization(
+            epsilon=config.layer_norm_eps, axis=-1
+        )
 
-        self.intermediate_dense = tf.keras.layers.Dense(config.intermediate_size)
+        self.intermediate_dense = tf.keras.layers.Dense(
+            config.intermediate_size,
+            kernel_initializer=get_initializer(config.initializer_range),
+        )
         self.intermediate_act = config.hidden_act
-        self.intermediate_dense2 = tf.keras.layers.Dense(config.hidden_size)
-        self.intermediate_layer_norm = tf.keras.layers.LayerNormalization(epsilon=config.layer_norm_eps, axis=-1)
+        self.intermediate_dense2 = tf.keras.layers.Dense(
+            config.hidden_size,
+            kernel_initializer=get_initializer(config.initializer_range),
+        )
+        self.intermediate_layer_norm = tf.keras.layers.LayerNormalization(
+            epsilon=config.layer_norm_eps, axis=-1
+        )
 
         self.dropout = tf.keras.layers.Dropout(config.hidden_dropout_prob)
 
