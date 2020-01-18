@@ -1,7 +1,7 @@
-import tensorflow as tf
 import pytest
+import tensorflow as tf
 
-from tf_bert.modeling import BertConfig, Bert
+from tf_bert.modeling import Bert, BertConfig
 
 
 @pytest.fixture
@@ -22,4 +22,3 @@ def test_bert_with_random_input(config: BertConfig, batch_size):
     encoder_ouputs = model(input_ids, token_type_ids, position_ids, attention_mask)
 
     assert encoder_ouputs.shape == (batch_size, config.max_position_embeddings, config.hidden_size)
-
