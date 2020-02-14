@@ -66,7 +66,7 @@ class BertConfig:
         return BertConfig(**file_content)
 
 
-class Bert(tf.keras.layers.Layer):
+class Bert(tf.keras.Model):
     def __init__(self, config: BertConfig):
         super().__init__()
 
@@ -104,11 +104,12 @@ class Bert(tf.keras.layers.Layer):
             activation="tanh",
         )
 
-    def call(self, input_ids, token_type_ids, position_ids, attention_mask):
+    def call(self, inputs):
+        input_ids, token_type_ids, position_ids, attention_mask = inputs
         words_embeddings = self.token_embeddings(input_ids)
         token_type_embeddings = self.token_type_embeddings(token_type_ids)
         position_embeddings = self.position_embeddings(position_ids)
-        attention_mask = attention_mask[:, tf.newaxis, :, tf.newaxis] * -1e9
+        attention_mask = (1.0 - attention_mask[:, tf.newaxis, :, tf.newaxis]) * -1e9
 
         embeddings = words_embeddings + token_type_embeddings + position_embeddings
         embeddings = self.embedding_layer_norm(embeddings)
@@ -155,6 +156,7 @@ class TransformerEncoder(tf.keras.layers.Layer):
         self.scaling_factor = float(config.num_attention_heads) ** -0.5
         self.num_head = config.num_attention_heads
         self.attention_depth = int(config.hidden_size / self.num_head)
+        self.hidden_size = config.hidden_size
 
     def call(self, sequence, attention_mask):
         # multihead attention
@@ -186,7 +188,8 @@ class TransformerEncoder(tf.keras.layers.Layer):
 
         # concat
         attention = tf.transpose(attention, perm=[0, 2, 1, 3])
-        attention = tf.reshape(attention, tuple(attention.shape[:-2]) + (-1,))
+        new_shape = [-1, tf.shape(attention)[1], self.hidden_size]
+        attention = tf.reshape(attention, new_shape)
 
         # last dense net
         attention = self.attention_dense(attention)
@@ -194,5 +197,5 @@ class TransformerEncoder(tf.keras.layers.Layer):
         return attention, attention_weight
 
     def _reshape_qkv(self, val):
-        new_shape = val.shape[:-1] + (self.num_head, self.attention_depth)
+        new_shape = [-1, tf.shape(val)[1], self.num_head, self.attention_depth]
         return tf.transpose(tf.reshape(val, new_shape), perm=[0, 2, 1, 3])
